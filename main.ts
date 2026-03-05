@@ -1,7 +1,20 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { renderPlanet } from './lib/render.ts';
+import { clamp } from './lib/utils.ts';
 
 const app = new Hono();
+
+function handlePlanet(c: Context, seed: string) {
+  const scale = clamp(parseInt(c.req.query('scale') || '1') || 1, 1, 4);
+  const png = renderPlanet(seed, scale);
+  return new Response(png as Uint8Array<ArrayBuffer>, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
+}
 
 app.get('/', (c) => {
   const html = `<!DOCTYPE html>
@@ -44,23 +57,11 @@ app.get('/', (c) => {
 });
 
 app.get('/:seed{.+\\.png}', (c) => {
-  const seed = c.req.param('seed').replace(/\.png$/, '');
-  const scale = Math.min(4, Math.max(1, parseInt(c.req.query('scale') || '1') || 1));
-  const png = renderPlanet(seed, scale);
-  return c.body(png, 200, {
-    'Content-Type': 'image/png',
-    'Cache-Control': 'public, max-age=31536000, immutable',
-  });
+  return handlePlanet(c, c.req.param('seed').replace(/\.png$/, ''));
 });
 
 app.get('/:seed', (c) => {
-  const seed = c.req.param('seed');
-  const scale = Math.min(4, Math.max(1, parseInt(c.req.query('scale') || '1') || 1));
-  const png = renderPlanet(seed, scale);
-  return c.body(png, 200, {
-    'Content-Type': 'image/png',
-    'Cache-Control': 'public, max-age=31536000, immutable',
-  });
+  return handlePlanet(c, c.req.param('seed'));
 });
 
 Deno.serve(app.fetch);

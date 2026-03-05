@@ -1,24 +1,11 @@
 import type { Color } from './color.ts';
-import { NoiseMode, weightedChoiceIndex } from './color.ts';
+import { NoiseMode } from './color.ts';
 import { Grid } from './grid.ts';
 import { NoiseGenerator } from './noise.ts';
 import type { Random } from './random.ts';
+import { setPixel, weightedChoiceIndex } from './utils.ts';
 
 const PI2 = Math.PI * 2;
-
-function setPixel(
-  pixels: Uint8Array, width: number, height: number,
-  x: number, y: number, c: Color | null,
-): void {
-  x = Math.floor(x);
-  y = Math.floor(y);
-  if (c === null || x < 0 || width <= x || y < 0 || height <= y) return;
-  const i = (y * width + x) * 4;
-  pixels[i] = c.r;
-  pixels[i + 1] = c.g;
-  pixels[i + 2] = c.b;
-  pixels[i + 3] = 255;
-}
 
 class PixelSphere {
   diameter: number;
@@ -73,7 +60,6 @@ export class Planet extends PixelSphere {
   offset: [number, number];
   grid: Grid;
   speed: number;
-  hasBack: boolean;
 
   constructor(rng: Random, options: PlanetOptions) {
     super(options.diameter);
@@ -83,7 +69,6 @@ export class Planet extends PixelSphere {
     this.lapTime = options.lapTime ?? 1;
     this.backColor = options.backColor ?? null;
     this.offset = [options.canvasWidth / 2, options.canvasHeight / 2];
-    this.hasBack = this.backColor !== null;
 
     const noise = new NoiseGenerator(rng.random());
     this.grid = new Grid(this.diameter * 2, this.diameter, 0);
@@ -91,21 +76,30 @@ export class Planet extends PixelSphere {
     this.speed = this.diameter / 30 / this.lapTime;
   }
 
-  private _convertVec3(x: number, y: number): [number, number, number] {
-    const phi = (x / this.grid.width) * PI2;
-    const theta = (y / this.grid.height) * Math.PI;
-    const nx = Math.sin(theta) * Math.cos(phi) + 1;
-    const ny = Math.sin(theta) * Math.sin(phi) + 1;
-    const nz = Math.cos(theta) + 1;
-    return [nx, ny, nz];
-  }
-
   private _setSphereNoise(noise: NoiseGenerator, rng: Random): void {
+    // Precompute trig values to avoid redundant Math.sin/cos calls
+    const cosPhis = new Float64Array(this.grid.width);
+    const sinPhis = new Float64Array(this.grid.width);
+    for (let x = 0; x < this.grid.width; x++) {
+      const phi = (x / this.grid.width) * PI2;
+      cosPhis[x] = Math.cos(phi);
+      sinPhis[x] = Math.sin(phi);
+    }
+    const sinThetas = new Float64Array(this.grid.height);
+    const cosThetas = new Float64Array(this.grid.height);
+    for (let y = 0; y < this.grid.height; y++) {
+      const theta = (y / this.grid.height) * Math.PI;
+      sinThetas[y] = Math.sin(theta);
+      cosThetas[y] = Math.cos(theta);
+    }
+
     for (let x = 0; x < this.grid.width; x++) {
       for (let y = 0; y < this.grid.height; y++) {
         let val: number;
         let weight: number[];
-        const [nx, ny, nz] = this._convertVec3(x, y);
+        const nx = sinThetas[y] * cosPhis[x] + 1;
+        const ny = sinThetas[y] * sinPhis[x] + 1;
+        const nz = cosThetas[y] + 1;
         let off: number;
 
         switch (this.noiseMode) {
@@ -153,7 +147,7 @@ export class Planet extends PixelSphere {
     pixels: Uint8Array, canvasWidth: number, canvasHeight: number,
     isBack: boolean, frameCount: number,
   ): void {
-    if (isBack && !this.hasBack) return;
+    if (isBack && this.backColor === null) return;
     for (let y = 0; y < this.diameter; y++) {
       const sw = this.sphereWidth[y];
       if (sw === undefined) continue;

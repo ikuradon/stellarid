@@ -1,4 +1,5 @@
 import { Random } from './random.ts';
+import { clamp, mod } from './utils.ts';
 
 export interface Color {
   r: number;
@@ -6,14 +7,10 @@ export interface Color {
   b: number;
 }
 
-function mod(a: number, b: number): number {
-  return ((a % b) + b) % b;
-}
-
 export function hsb(h: number, s: number, b: number): Color {
   h = mod(h, 360);
-  s = Math.max(0, Math.min(100, s)) / 100;
-  b = Math.max(0, Math.min(100, b)) / 100;
+  s = clamp(s, 0, 100) / 100;
+  b = clamp(b, 0, 100) / 100;
 
   const c = b * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
@@ -51,24 +48,6 @@ export const ColorMode = {
   Cavity: 4,
   Earth: 5,
 } as const;
-
-export function weightedChoiceIndex(
-  length: number, weight: number[], value: number,
-): number {
-  const totalWeight = weight.reduce((sum, val) => sum + val, 0);
-  let threshold = value * totalWeight;
-  for (let i = 0; i < length; i++) {
-    if (threshold <= weight[i]) return i;
-    threshold -= weight[i];
-  }
-  return length - 1;
-}
-
-export function weightedChoice<T>(
-  array: T[], weight: number[], value: number,
-): T {
-  return array[weightedChoiceIndex(array.length, weight, value)];
-}
 
 interface ColorProp {
   h: { offset: number; range: number };

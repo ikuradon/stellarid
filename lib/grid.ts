@@ -1,6 +1,4 @@
-function mod(a: number, b: number): number {
-  return ((a % b) + b) % b;
-}
+import { mod } from './utils.ts';
 
 export class Grid {
   width: number;

@@ -38,7 +38,7 @@ export function createAlea(seed: string | number): () => number {
 }
 
 export class Random {
-  seed: string;
+  readonly seed: string;
   private rng: () => number;
 
   constructor(seed?: string) {

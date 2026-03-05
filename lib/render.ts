@@ -1,13 +1,17 @@
 import { encode } from 'fast-png';
 import PoissonDiskSampling from 'poisson-disk-sampling';
 import type { Color, PlanetPalette } from './color.ts';
-import { ColorMode, createPalette, NoiseMode, weightedChoice } from './color.ts';
+import { ColorMode, createPalette, NoiseMode } from './color.ts';
 import { Planet, Satellite } from './planet.ts';
 import { Random } from './random.ts';
+import { setPixel, weightedChoice } from './utils.ts';
 import { nouns } from './words.ts';
 
 const WIDTH = 192;
 const HEIGHT = 144;
+const MAX_CACHE_SIZE = 256;
+
+const cache = new Map<string, Uint8Array>();
 
 interface SceneData {
   palette: PlanetPalette;
@@ -118,56 +122,37 @@ function generate(rng: Random): SceneData {
   return { palette, planets, satellites, stars };
 }
 
-function setPixel(
-  pixels: Uint8Array, x: number, y: number, c: Color | null,
-): void {
-  x = Math.floor(x);
-  y = Math.floor(y);
-  if (c === null || x < 0 || WIDTH <= x || y < 0 || HEIGHT <= y) return;
-  const i = (y * WIDTH + x) * 4;
-  pixels[i] = c.r;
-  pixels[i + 1] = c.g;
-  pixels[i + 2] = c.b;
-  pixels[i + 3] = 255;
-}
-
 export function renderPlanet(seed: string, scale: number = 1): Uint8Array {
-  const normalizedSeed = seed
+  const normalizedSeed = (seed || randomWord())
     .replace(/ /g, '_')
     .replace(/[^\w]/g, '?')
-    .toLowerCase();
-  const seedUpper = (normalizedSeed || randomWord()).toUpperCase();
+    .toUpperCase();
 
-  const rng = new Random(seedUpper);
+  const cacheKey = `${normalizedSeed}:${scale}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const rng = new Random(normalizedSeed);
   const { palette, planets, satellites, stars } = generate(rng);
   const frameCount = 0;
 
-  // Create pixel buffer
   const pixels = new Uint8Array(WIDTH * HEIGHT * 4);
 
-  // Fill background
+  // Fill background using Uint32Array for efficiency
   const bg = palette.background;
-  for (let i = 0; i < WIDTH * HEIGHT; i++) {
-    pixels[i * 4] = bg.r;
-    pixels[i * 4 + 1] = bg.g;
-    pixels[i * 4 + 2] = bg.b;
-    pixels[i * 4 + 3] = 255;
-  }
+  const bgWord = bg.r | (bg.g << 8) | (bg.b << 16) | (255 << 24);
+  new Uint32Array(pixels.buffer).fill(bgWord);
 
-  // Draw stars
   for (const star of stars) {
-    setPixel(pixels, star[0], star[1], star[2]);
+    setPixel(pixels, WIDTH, HEIGHT, star[0], star[1], star[2]);
   }
 
-  // Draw back layers
   for (let i = satellites.length - 1; i >= 0; i--) {
     satellites[i].draw(pixels, WIDTH, HEIGHT, true, frameCount);
   }
   for (let i = planets.length - 1; i >= 0; i--) {
     planets[i].draw(pixels, WIDTH, HEIGHT, true, frameCount);
   }
-
-  // Draw front layers
   for (let i = 0; i < planets.length; i++) {
     planets[i].draw(pixels, WIDTH, HEIGHT, false, frameCount);
   }
@@ -175,39 +160,44 @@ export function renderPlanet(seed: string, scale: number = 1): Uint8Array {
     satellites[i].draw(pixels, WIDTH, HEIGHT, false, frameCount);
   }
 
-  // Scale if needed
+  let outWidth = WIDTH;
+  let outHeight = HEIGHT;
+  let outPixels = pixels;
+
   if (scale > 1) {
-    const newW = WIDTH * scale;
-    const newH = HEIGHT * scale;
-    const scaled = new Uint8Array(newW * newH * 4);
-    for (let y = 0; y < newH; y++) {
+    outWidth = WIDTH * scale;
+    outHeight = HEIGHT * scale;
+    outPixels = new Uint8Array(outWidth * outHeight * 4);
+    for (let y = 0; y < outHeight; y++) {
       const srcY = Math.floor(y / scale);
-      for (let x = 0; x < newW; x++) {
+      for (let x = 0; x < outWidth; x++) {
         const srcX = Math.floor(x / scale);
         const si = (srcY * WIDTH + srcX) * 4;
-        const di = (y * newW + x) * 4;
-        scaled[di] = pixels[si];
-        scaled[di + 1] = pixels[si + 1];
-        scaled[di + 2] = pixels[si + 2];
-        scaled[di + 3] = pixels[si + 3];
+        const di = (y * outWidth + x) * 4;
+        outPixels[di] = pixels[si];
+        outPixels[di + 1] = pixels[si + 1];
+        outPixels[di + 2] = pixels[si + 2];
+        outPixels[di + 3] = pixels[si + 3];
       }
     }
-    return encode({
-      width: newW,
-      height: newH,
-      data: scaled,
-      channels: 4,
-      depth: 8,
-    });
   }
 
-  return encode({
-    width: WIDTH,
-    height: HEIGHT,
-    data: pixels,
+  const png = encode({
+    width: outWidth,
+    height: outHeight,
+    data: outPixels,
     channels: 4,
     depth: 8,
   });
+
+  // LRU-like eviction: remove oldest entry when cache is full
+  if (cache.size >= MAX_CACHE_SIZE) {
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+  cache.set(cacheKey, png);
+
+  return png;
 }
 
 function randomWord(): string {

@@ -23,10 +23,13 @@ export class NoiseGenerator {
   ): number {
     let result = 0;
     let denom = 0;
+    let ampl = 1;
+    let scale = 1;
     for (let o = 0; o < octaves; o++) {
-      const ampl = Math.pow(0.5, o);
-      result += ampl * func(x, y, z, Math.pow(2, o));
+      result += ampl * func(x, y, z, scale);
       denom += ampl;
+      ampl *= 0.5;
+      scale *= 2;
     }
     return result / denom;
   }
