@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { renderPlanet } from './lib/render.ts';
 import { clamp } from './lib/utils.ts';
 
+const SITE_URL = 'https://stellarid.ikuradon.deno.net';
 const app = new Hono();
 
 function handlePlanet(c: Context, seed: string) {
@@ -24,6 +25,16 @@ app.get('/', (c) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stellarid</title>
+  <meta name="description" content="Procedural planet avatar generator. Same text always produces the same planet.">
+  <meta property="og:title" content="Stellarid">
+  <meta property="og:description" content="Procedural planet avatar generator. Same text always produces the same planet.">
+  <meta property="og:image" content="${SITE_URL}/stellarid?wide&scale=4">
+  <meta property="og:url" content="${SITE_URL}/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Stellarid">
+  <meta name="twitter:description" content="Procedural planet avatar generator. Same text always produces the same planet.">
+  <meta name="twitter:image" content="${SITE_URL}/stellarid?scale=4">
   <style>
     body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; margin: 0; padding: 2rem; text-align: center; }
     h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
