@@ -9,6 +9,7 @@ import { nouns } from './words.ts';
 
 const WIDTH = 192;
 const HEIGHT = 144;
+const SQUARE_SIZE = HEIGHT;
 const MAX_CACHE_SIZE = 256;
 
 const cache = new Map<string, Uint8Array>();
@@ -122,70 +123,101 @@ function generate(rng: Random): SceneData {
   return { palette, planets, satellites, stars };
 }
 
-export function renderPlanet(seed: string, scale: number = 1): Uint8Array {
+function renderScene(
+  palette: PlanetPalette, planets: Planet[],
+  satellites: Satellite[], stars: [number, number, Color | null][],
+): Uint8Array {
+  const pixels = new Uint8Array(WIDTH * HEIGHT * 4);
+  const bg = palette.background;
+  new Uint32Array(pixels.buffer).fill(
+    bg.r | (bg.g << 8) | (bg.b << 16) | (255 << 24),
+  );
+
+  for (const star of stars) {
+    setPixel(pixels, WIDTH, HEIGHT, star[0], star[1], star[2]);
+  }
+  for (let i = satellites.length - 1; i >= 0; i--) {
+    satellites[i].draw(pixels, WIDTH, HEIGHT, true, 0);
+  }
+  for (let i = planets.length - 1; i >= 0; i--) {
+    planets[i].draw(pixels, WIDTH, HEIGHT, true, 0);
+  }
+  for (let i = 0; i < planets.length; i++) {
+    planets[i].draw(pixels, WIDTH, HEIGHT, false, 0);
+  }
+  for (let i = 0; i < satellites.length; i++) {
+    satellites[i].draw(pixels, WIDTH, HEIGHT, false, 0);
+  }
+  return pixels;
+}
+
+function cropCenter(
+  pixels: Uint8Array, srcW: number, srcH: number, size: number,
+): Uint8Array {
+  const offsetX = Math.floor((srcW - size) / 2);
+  const offsetY = Math.floor((srcH - size) / 2);
+  const out = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    const si = ((y + offsetY) * srcW + offsetX) * 4;
+    out.set(pixels.subarray(si, si + size * 4), y * size * 4);
+  }
+  return out;
+}
+
+function scaleNearest(
+  pixels: Uint8Array, w: number, h: number, factor: number,
+): { data: Uint8Array; width: number; height: number } {
+  const outW = w * factor;
+  const outH = h * factor;
+  const src32 = new Uint32Array(pixels.buffer);
+  const out = new Uint8Array(outW * outH * 4);
+  const dst32 = new Uint32Array(out.buffer);
+  for (let y = 0; y < outH; y++) {
+    const srcY = Math.floor(y / factor);
+    for (let x = 0; x < outW; x++) {
+      dst32[y * outW + x] = src32[srcY * w + Math.floor(x / factor)];
+    }
+  }
+  return { data: out, width: outW, height: outH };
+}
+
+export interface RenderOptions {
+  scale?: number;
+  wide?: boolean;
+}
+
+export function renderPlanet(seed: string, options: RenderOptions = {}): Uint8Array {
+  const { scale = 1, wide = false } = options;
   const normalizedSeed = (seed || randomWord())
     .replace(/ /g, '_')
     .replace(/[^\w]/g, '?')
     .toUpperCase();
 
-  const cacheKey = `${normalizedSeed}:${scale}`;
+  const cacheKey = `${normalizedSeed}:${scale}:${wide ? 'w' : 's'}`;
   const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    // Move to end for LRU eviction
+    cache.delete(cacheKey);
+    cache.set(cacheKey, cached);
+    return cached;
+  }
 
   const rng = new Random(normalizedSeed);
   const { palette, planets, satellites, stars } = generate(rng);
-  const frameCount = 0;
 
-  const pixels = new Uint8Array(WIDTH * HEIGHT * 4);
-
-  // Fill background using Uint32Array for efficiency
-  const bg = palette.background;
-  const bgWord = bg.r | (bg.g << 8) | (bg.b << 16) | (255 << 24);
-  new Uint32Array(pixels.buffer).fill(bgWord);
-
-  for (const star of stars) {
-    setPixel(pixels, WIDTH, HEIGHT, star[0], star[1], star[2]);
-  }
-
-  for (let i = satellites.length - 1; i >= 0; i--) {
-    satellites[i].draw(pixels, WIDTH, HEIGHT, true, frameCount);
-  }
-  for (let i = planets.length - 1; i >= 0; i--) {
-    planets[i].draw(pixels, WIDTH, HEIGHT, true, frameCount);
-  }
-  for (let i = 0; i < planets.length; i++) {
-    planets[i].draw(pixels, WIDTH, HEIGHT, false, frameCount);
-  }
-  for (let i = 0; i < satellites.length; i++) {
-    satellites[i].draw(pixels, WIDTH, HEIGHT, false, frameCount);
-  }
-
-  let outWidth = WIDTH;
-  let outHeight = HEIGHT;
-  let outPixels = pixels;
-
-  if (scale > 1) {
-    outWidth = WIDTH * scale;
-    outHeight = HEIGHT * scale;
-    outPixels = new Uint8Array(outWidth * outHeight * 4);
-    for (let y = 0; y < outHeight; y++) {
-      const srcY = Math.floor(y / scale);
-      for (let x = 0; x < outWidth; x++) {
-        const srcX = Math.floor(x / scale);
-        const si = (srcY * WIDTH + srcX) * 4;
-        const di = (y * outWidth + x) * 4;
-        outPixels[di] = pixels[si];
-        outPixels[di + 1] = pixels[si + 1];
-        outPixels[di + 2] = pixels[si + 2];
-        outPixels[di + 3] = pixels[si + 3];
-      }
-    }
-  }
+  const pixels = renderScene(palette, planets, satellites, stars);
+  const cropped = wide ? pixels : cropCenter(pixels, WIDTH, HEIGHT, SQUARE_SIZE);
+  const croppedW = wide ? WIDTH : SQUARE_SIZE;
+  const croppedH = wide ? HEIGHT : SQUARE_SIZE;
+  const { data: finalPixels, width: finalW, height: finalH } =
+    scale > 1
+      ? scaleNearest(cropped, croppedW, croppedH, scale)
+      : { data: cropped, width: croppedW, height: croppedH };
 
   const png = encode({
-    width: outWidth,
-    height: outHeight,
-    data: outPixels,
+    width: finalW,
+    height: finalH,
+    data: finalPixels,
     channels: 4,
     depth: 8,
   });

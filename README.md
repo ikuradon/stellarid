@@ -7,10 +7,13 @@ Given any text, Stellarid deterministically generates a unique pixel-art planet 
 ## Usage
 
 ```
-GET /{text}         → PNG image
-GET /{text}.png     → same
-GET /{text}?scale=2 → scaled up (1–4, default 1)
+GET /{text}          → PNG image (144x144 square)
+GET /{text}.png      → same
+GET /{text}?scale=2  → scaled up (1–4, default 1)
+GET /{text}?wide     → wide format (192x144, original aspect)
 ```
+
+Parameters can be combined: `/{text}?wide&scale=3`
 
 ### Examples
 

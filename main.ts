@@ -6,7 +6,8 @@ const app = new Hono();
 
 function handlePlanet(c: Context, seed: string) {
   const scale = clamp(parseInt(c.req.query('scale') || '1') || 1, 1, 4);
-  const png = renderPlanet(seed, scale);
+  const wide = c.req.query('wide') !== undefined;
+  const png = renderPlanet(seed, { scale, wide });
   return new Response(png as Uint8Array<ArrayBuffer>, {
     status: 200,
     headers: {
@@ -40,15 +41,16 @@ app.get('/', (c) => {
   <h1>Stellarid</h1>
   <p>Procedural planet avatar generator. Same text always produces the same planet.</p>
   <div class="examples">
-    <a class="example" href="/hello"><img src="/hello?scale=2" alt="hello" width="384" height="288"><code>hello</code></a>
-    <a class="example" href="/world"><img src="/world?scale=2" alt="world" width="384" height="288"><code>world</code></a>
-    <a class="example" href="/deno"><img src="/deno?scale=2" alt="deno" width="384" height="288"><code>deno</code></a>
+    <a class="example" href="/hello"><img src="/hello?scale=2" alt="hello" width="288" height="288"><code>hello</code></a>
+    <a class="example" href="/world"><img src="/world?scale=2" alt="world" width="288" height="288"><code>world</code></a>
+    <a class="example" href="/deno"><img src="/deno?scale=2" alt="deno" width="288" height="288"><code>deno</code></a>
   </div>
   <div class="usage">
     <h2>Usage</h2>
     <p><code>GET /{text}</code> - Generate a planet PNG from any text</p>
     <p><code>GET /{text}.png</code> - Same, with explicit extension</p>
     <p><code>GET /{text}?scale=2</code> - Scale up (1-4, default 1)</p>
+    <p><code>GET /{text}?wide</code> - Wide format (192x144, original aspect)</p>
   </div>
   <p>Based on <a href="https://github.com/yurkth/astraea" style="color:#7aa2f7">Astraea</a></p>
 </body>
